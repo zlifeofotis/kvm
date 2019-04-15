@@ -1,0 +1,299 @@
+
+
+重要站点：
+
+http://www.server-world.info/en
+
+
+
+gentoo下kvm:
+
+1        安装bridge-utils  usermode-utilities
+
+gentoo1 qemu # cat /etc/conf.d/net
+#config_enp2s0="192.168.18.222/24"
+#routes_enp2s0="default via 192.168.18.1"
+#dns_domain_enp2s0="chesley.com"
+#dns_search_enp2s0="kim.com"
+#dns_servers_enp2s0="192.168.18.1"
+config_enp2s0="null"
+
+config_tap0="null"
+tuntap_tap0="tap"
+#tunctl_tap0="-u qemu"
+#carrier_timeout_tap0="0"
+
+#depend_br0(){
+#    need net.enp2s0 net.tap0
+#}
+
+bridge_br0="enp2s0 tap0"
+config_br0="192.168.18.222/24"
+brctl_br0="setfd 0 sethello 30 stp off"
+routes_br0="default via 192.168.18.1"
+dns_servers_br0="192.168.18.1"
+
+2        qemu-img create -f qcow2 /usr/local/vm/centos.img 10G
+
+安装系统：
+3        
+法一(本地安装):	qemu-system-x86_64 -enable-kvm -name vcentos -m 512 -smp 1 -drive file=/usr/local/vm/centos.img,if=virtio,cache=writeback -boot order=d -cdrom /usr/local/src/CentOS-6.6-x86_64-minimal.iso -net nic,vlan=0,model=virtio,macaddr=52:54:00:12:34:55 -net tap,vlan=0,ifname=tap0,script=no -curses
+
+法二(本地安装):	qemu-system-x86_64 -enable-kvm -name vm3 -m 512 -smp 1 -cdrom /usr/local/src/CentOS-6.6-x86_64-minimal.iso -drive file=/usr/local/vm/vm3.img,if=virtio,cache=writeback -net nic,vlan=0,model=virtio,macaddr=52:54:00:12:34:57 -net tap,vlan=0,ifname=tap3,script=no -kernel /mnt/images/pxeboot/vmlinuz -initrd /mnt/images/pxeboot/initrd.img -append console=ttyS0 -nographic 
+
+法三(网络安装):	qemu-system-x86_64 -enable-kvm -name vm3 -m 512 -smp 1 -drive file=/usr/local/vm/vm3.img,if=virtio,cache=writeback -net nic,vlan=0,model=virtio,macaddr=52:54:00:12:34:57 -net tap,vlan=0,ifname=tap3,script=no -kernel /mnt/images/pxeboot/vmlinuz -initrd /mnt/images/pxeboot/initrd.img -append console=ttyS0 -nographic
+
+法二、三安装系统后重启方式，以便设置ip地址等：
+	  qemu-system-x86_64 -enable-kvm -name vm3 -m 512 -smp 1 -drive file=/usr/local/vm/vm3.img,if=virtio,cache=writeback -net nic,vlan=0,model=virtio,macaddr=52:54:00:12:34:57 -net tap,vlan=0,ifname=tap3,script=no -nographic
+
+安装系统后启动方式：
+4        qemu-system-x86_64 -enable-kvm -name vcentos -m 512 -smp 1 -drive file=/usr/local/vm/centos.img,if=virtio ,cache=writeback -net nic,vlan=0,model=virtio,macaddr=52:54:00:12:34:55 -net tap,vlan=0,ifname=tap0,script=no -curses
+
+5        nohup qemu-system-x86_64 -enable-kvm -name vcentos -m 512 -smp 1 -drive file=/usr/local/vm/centos.img,if=virtio ,cache=writeback -net nic,vlan=0,model=virtio,macaddr=52:54:00:12:34:55 -net tap,vlan=0,ifname=tap0,script=no -nographic > /dev/null &
+
+
+screen下启动：
+	qemu-system-x86_64 -enable-kvm -name centos -m 512 -smp 1 -drive file=/usr/local/vm/centos.img,if=virtio,cache=writeback -net nic,vlan=0,model=virtio,macaddr=52:54:00:12:34:56 -net tap,vlan=0,ifname=tap0,script=no &
+
+注：
+添加虚拟网卡，并加入网桥示例：
+tunctl -t tap1
+ifconfig tap1 up
+brctl addif br0 tap1
+gentoo1 ~ # brctl show
+bridge name	bridge id		STP enabled	interfaces
+br0		8000.00241dbe00d3				no		enp2s0
+												tap0
+												tap1
+
+
+生成镜像(无系统)
+qemu-img create -f qcow2 centos.img 10G
+安装系统后，生成基础系统镜像，以后以此派生镜像：
+qemu-img convert -O raw centos.img base.raw
+派生镜像示例：
+qemu-img create -f qcow2 vm1.img -o backing_file=base.raw 10G
+
+
+centos下kvm:
+
+[root@diaogang001 network-scripts]# cat ifcfg-br0
+DEVICE=br0
+TYPE=Bridge
+ONBOOT=yes
+IPADDR=192.168.18.189
+NETMASK=255.255.255.0
+GATEWAY=192.168.18.1
+NM_CONTROLLED=yes
+BOOTPROTO=static
+[root@diaogang001 network-scripts]# cat ifcfg-eth0
+DEVICE=eth0
+HWADDR=00:24:1D:EA:7D:67
+TYPE=Ethernet
+UUID=fc8153d6-b380-4985-a7ec-14640f791560
+ONBOOT=yes
+NM_CONTROLLED=yes
+BOOTPROTO=none
+BRIDGE=br0
+[root@diaogang001 network-scripts]#
+
+安装系统：
+virt-install -n centos004 -r 512 --vcpus=1 -v --network model=virtio,bridge=br0,mac=20:12:89:55:23:90 --location=http://192.168.18.189/centos  --disk /usr/local/vm/centos004.img,cache=writeback,bus=virtio,format=qcow2,size=10 --nographics --extra-args='console=ttyS0'
+
+启动：
+virsh start centos004
+
+attach到guest:
+virsh console centos004
+
+
+
+
+-------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+centos:
+
+
+virt-install -n centos001 -r 512 --vcpus=1 -v --network model=virtio,bridge=br0,mac=11:22:33:44:55:66 --cdrom=/usr/local/src/CentOS-6.6-x86_64-minimal.iso  --disk /usr/local/vm/centos001.img,size=10 --print-step all
+
+
+virt-install -n centos003 -r 512 --vcpus=1 -v --network model=virtio,bridge=br0,mac=20:12:89:55:23:89 --location=http://192.168.18.189/centos  --disk /usr/local/vm/centos003.img,cache=writeback,bus=virtio,format=qcow2,size=10 --nographics --extra-args='console=ttyS0'
+
+
+
+virt-install -n centos003 -r 512 --vcpus=1 -v --network model=virtio,bridge=br0,mac=20:12:89:55:23:89 --location=http://192.168.18.189/centos  --disk /usr/local/vm/centos003.img,cache=writeback,bus=virtio,format=qcow2,size=10 --nographics --extra-args='console=ttyS0 ks=http://192.168.18.189/centos/centos-ks.cfg ip=192.168.18.191 netmask=255.255.255.0 dns=192.168.18.1 gateway=192.168.18.1'
+
+
+virt-install --hvm --virt-type=kvm --location=http://192.168.0.254/centos6/64 --name centos6.4 --ram 4096 --vcpus=2 --disk path=/dev/vg_vm/centos6.4 -w bridge:virbr0 -x "ks=http://192.168.0.130/ks/centos6.4.ks ip=192.168.122.10 netmask=255.255.255.0 dns=192.168.122.1 gateway=192.168.122.1 console=tty0 console=ttyS0,115200n8"
+
+
+virt-install -n centos003 -r 512 --vcpus=1 -v --network model=virtio,bridge=br0,mac=20:12:89:55:23:89 --cdrom=/usr/local/src/CentOS-6.6-x86_64-minimal.iso --disk /usr/local/vm/centos003.img,cache=writeback,bus=virtio,format=qcow2,size=10 --nographics  --boot kernel=/mnt/isolinux/vmlinuz,initrd=/mnt/isolinux/initrd.img,kernel_args="console=/dev/ttyS0"
+
+
+
+[root@diaogang001 network-scripts]# cat ifcfg-br0
+DEVICE=br0
+TYPE=Bridge
+ONBOOT=yes
+IPADDR=192.168.18.189
+NETMASK=255.255.255.0
+GATEWAY=192.168.18.1
+NM_CONTROLLED=yes
+BOOTPROTO=static
+[root@diaogang001 network-scripts]# cat ifcfg-eth0
+DEVICE=eth0
+HWADDR=00:24:1D:EA:7D:67
+TYPE=Ethernet
+UUID=fc8153d6-b380-4985-a7ec-14640f791560
+ONBOOT=yes
+NM_CONTROLLED=yes
+BOOTPROTO=none
+BRIDGE=br0
+[root@diaogang001 network-scripts]#
+
+
+已经验证：
+virt-install -n centos004 -r 512 --vcpus=1 -v --network model=virtio,bridge=br0,mac=20:12:89:55:23:90 --location=http://192.168.18.189/centos  --disk /usr/local/vm/centos004.img,cache=writeback,bus=virtio,format=qcow2,size=10 --nographics --extra-args='console=ttyS0'
+
+启动：
+virsh start centos004
+
+attach到guest:
+virsh console centos004
+
+
+
+
+http://www.server-world.info/en/
+
+
+
+
+
+
+
+
+
+
+
+
+qemu-system-x86_64 --enable-kvm -m 1024 -smp 2 vm2.img -cdrom /data/nfs/images/CentOS-6.4-x86_64-minimal.iso --nographic -bios /usr/local/share/qemu/bios.bin -append console=ttyS0 -kernel /mnt/isolinux/vmlinuz -initrd /mnt/isolinux/initrd.img
+
+
+
+
+
+<domain type='kvm'>
+  <name>centos001</name>
+  <uuid>00419364-bad0-8e42-d89c-7552c35f19b5</uuid>
+  <memory>524288</memory>
+  <currentMemory>524288</currentMemory>
+  <vcpu>1</vcpu>
+  <os>
+    <type arch='x86_64'>hvm</type>
+    <boot dev='cdrom'/>
+    <boot dev='hd'/>
+  </os>
+  <features>
+    <acpi/><apic/><pae/>
+  </features>
+  <clock offset="utc"/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>destroy</on_reboot>
+  <on_crash>destroy</on_crash>
+  <devices>
+    <emulator>/usr/libexec/qemu-kvm</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' cache='none'/>
+      <source file='/usr/local/vm/centos001.img'/>
+      <target dev='hda' bus='ide'/>
+    </disk>
+    <disk type='file' device='cdrom'>
+      <driver name='qemu'/>
+      <source file='/usr/local/src/CentOS-6.6-x86_64-minimal.iso'/>
+      <target dev='hdc' bus='ide'/>
+      <readonly/>
+    </disk>
+    <controller type='usb' index='0' model='ich9-ehci1'>
+    </controller>
+    <controller type='usb' index='0' model='ich9-uhci1'>
+        <master startport='0'/>
+    </controller>
+    <controller type='usb' index='0' model='ich9-uhci2'>
+        <master startport='2'/>
+    </controller>
+    <controller type='usb' index='0' model='ich9-uhci3'>
+        <master startport='4'/>
+    </controller>
+    <interface type='bridge'>
+      <source bridge='br0'/>
+      <mac address='11:22:33:44:55:66'/>
+      <model type='virtio'/>
+    </interface>
+    <input type='mouse' bus='ps2'/>
+    <console type='pty'/>
+  </devices>
+</domain>
+<domain type='kvm'>
+  <name>centos001</name>
+  <uuid>00419364-bad0-8e42-d89c-7552c35f19b5</uuid>
+  <memory>524288</memory>
+  <currentMemory>524288</currentMemory>
+  <vcpu>1</vcpu>
+  <os>
+    <type arch='x86_64'>hvm</type>
+    <boot dev='hd'/>
+  </os>
+  <features>
+    <acpi/><apic/><pae/>
+  </features>
+  <clock offset="utc"/>
+  <on_poweroff>destroy</on_poweroff>
+  <on_reboot>restart</on_reboot>
+  <on_crash>restart</on_crash>
+  <devices>
+    <emulator>/usr/libexec/qemu-kvm</emulator>
+    <disk type='file' device='disk'>
+      <driver name='qemu' cache='none'/>
+      <source file='/usr/local/vm/centos001.img'/>
+      <target dev='hda' bus='ide'/>
+    </disk>
+    <disk type='block' device='cdrom'>
+      <target dev='hdc' bus='ide'/>
+      <readonly/>
+    </disk>
+    <controller type='usb' index='0' model='ich9-ehci1'>
+    </controller>
+    <controller type='usb' index='0' model='ich9-uhci1'>
+        <master startport='0'/>
+    </controller>
+    <controller type='usb' index='0' model='ich9-uhci2'>
+        <master startport='2'/>
+    </controller>
+    <controller type='usb' index='0' model='ich9-uhci3'>
+        <master startport='4'/>
+    </controller>
+    <interface type='bridge'>
+      <source bridge='br0'/>
+      <mac address='11:22:33:44:55:66'/>
+      <model type='virtio'/>
+    </interface>
+    <input type='mouse' bus='ps2'/>
+    <console type='pty'/>
+  </devices>
+</domain>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
